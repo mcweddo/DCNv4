@@ -57,6 +57,7 @@ prefix = os.environ["S3_PREFIX"].rstrip("/") + "/"
 repo_root = Path("$REPO_NAME")
 target_base = repo_root / "detection" / "data"
 marker_file = Path("$MARKER_FILE")
+skipped = 0
 
 target_base.mkdir(parents=True, exist_ok=True)
 s3 = boto3.resource("s3")
@@ -72,6 +73,7 @@ objects = [
 def download_with_retry(key, relative_path, max_retries=3):
     dest_path = target_base / relative_path
     if dest_path.exists():
+        skipped += 1
         return True  # ✅ Skip existing file
 
     dest_path.parent.mkdir(parents=True, exist_ok=True)
@@ -102,6 +104,7 @@ if failed:
         print(f" - {f}")
     raise RuntimeError("Download incomplete. Please retry.")
 else:
+    print(skipped)
     marker_file.write_text("Download completed.")
     print("✅ All files downloaded successfully.")
 EOF
