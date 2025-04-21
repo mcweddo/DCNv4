@@ -10,6 +10,7 @@ fi
 
 REPO_NAME=$(basename "$GIT_REPO_URL" .git)
 TARGET_FOLDER="$REPO_NAME/detection"
+MARKER_FILE="$TARGET_FOLDER/.download_complete"
 
 # ===== Step 0: Install awscli and boto3 =====
 echo "📦 Installing AWS CLI and boto3..."
@@ -81,6 +82,7 @@ def download_with_retry(key, local_path, max_retries=3):
     local_path.parent.mkdir(parents=True, exist_ok=True)
     for attempt in range(max_retries):
         try:
+            print("ima")
             bucket_obj.download_file(key, str(local_path))
             return True
         except (BotoCoreError, ClientError):
@@ -106,6 +108,7 @@ if failed:
         print(f" - {f}")
     raise RuntimeError("Download incomplete. Please retry.")
 else:
+    marker_file.parent.mkdir(parents=True, exist_ok=True)  # ensure dir exists
     marker_file.write_text("Download completed.")
     print("✅ All files downloaded successfully.")
 EOF
