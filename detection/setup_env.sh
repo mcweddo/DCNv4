@@ -62,15 +62,18 @@ target_base.mkdir(parents=True, exist_ok=True)
 s3 = boto3.resource("s3")
 bucket_obj = s3.Bucket(bucket)
 
-# Gather list of keys and relative paths
+# Collect S3 keys and compute relative local paths
 objects = [
-    (obj.key, Path(obj.key).relative_to(repo_root.name + "/"))  # keep detection/data/... as relative
+    (obj.key, Path(obj.key).relative_to(repo_root.name + "/"))  # keep full path like detection/data/...
     for obj in bucket_obj.objects.filter(Prefix=prefix)
     if not obj.key.endswith("/")
 ]
 
 def download_with_retry(key, relative_path, max_retries=3):
     dest_path = repo_root / relative_path
+    if dest_path.exists():
+        return True  # ✅ Skip existing file
+
     dest_path.parent.mkdir(parents=True, exist_ok=True)
     for attempt in range(max_retries):
         try:
@@ -79,9 +82,9 @@ def download_with_retry(key, relative_path, max_retries=3):
         except (BotoCoreError, ClientError):
             time.sleep(2 ** attempt)
             if attempt == max_retries - 1:
-                return key
+                return key  # ❌ Failed after retries
 
-# Run downloads in parallel with retries
+# Run downloads in parallel with retries and skipping
 failed = []
 with ThreadPoolExecutor(max_workers=8) as executor:
     future_to_key = {
@@ -102,6 +105,7 @@ else:
     marker_file.write_text("Download completed.")
     print("✅ All files downloaded successfully.")
 EOF
+
 
 
 # ===== Step 4: Install Python Requirements =====
