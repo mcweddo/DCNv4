@@ -55,7 +55,7 @@ from botocore.exceptions import BotoCoreError, ClientError
 bucket = os.environ["S3_BUCKET"]
 prefix = os.environ["S3_PREFIX"].rstrip("/") + "/"
 repo_root = Path("$REPO_NAME")
-target_base = repo_root / "detection"
+target_base = repo_root / "detection" / "data"
 marker_file = Path("$MARKER_FILE")
 
 target_base.mkdir(parents=True, exist_ok=True)
@@ -70,7 +70,7 @@ objects = [
 ]
 
 def download_with_retry(key, relative_path, max_retries=3):
-    dest_path = repo_root / relative_path
+    dest_path = target_base / relative_path
     if dest_path.exists():
         return True  # ✅ Skip existing file
 
