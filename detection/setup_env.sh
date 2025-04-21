@@ -8,19 +8,13 @@ if [[ -z "$GIT_REPO_URL" || -z "$S3_BUCKET" || -z "$S3_PREFIX" || -z "$S3_DATASE
   exit 1
 fi
 
-# ===== Argument Validation =====
-if [[ $# -lt 1 ]]; then
-  echo "Usage: $0 <target_local_folder>"
-  exit 1
-fi
-
-LOCAL_FOLDER="$1"
 REPO_NAME=$(basename "$GIT_REPO_URL" .git)
+TARGET_FOLDER="$REPO_NAME/detection"
 
 # ===== Step 0: Install awscli and boto3 =====
 echo "📦 Installing AWS CLI and boto3..."
 pip install --upgrade pip
-pip install awscli boto3
+pip install awscli boto3 tqdm
 
 # ===== Step 1: Clone Git Repository =====
 echo "📦 Cloning repository..."
@@ -50,34 +44,72 @@ except s3.exceptions.ClientError as e:
         raise
 EOF
 
-# ===== Step 3: Download Dataset from S3 =====
+# ===== Step 3: Download Dataset from S3 with retries & full path preserved =====
 python3 <<EOF
-import boto3, os
+import boto3, os, time
 from pathlib import Path
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from tqdm import tqdm
+from botocore.exceptions import BotoCoreError, ClientError
 
 bucket = os.environ["S3_BUCKET"]
-prefix = os.environ["S3_PREFIX"]
-target_dir = Path("$LOCAL_FOLDER")
+prefix = os.environ["S3_PREFIX"].rstrip("/") + "/"
+repo_root = Path("$REPO_NAME")
+target_base = repo_root / "detection"
+marker_file = Path("$MARKER_FILE")
 
+target_base.mkdir(parents=True, exist_ok=True)
 s3 = boto3.resource("s3")
 bucket_obj = s3.Bucket(bucket)
 
-for obj in bucket_obj.objects.filter(Prefix=prefix):
-    if obj.key.endswith("/"):
-        continue
-    relative_path = Path(obj.key).relative_to(prefix)
-    dest_path = target_dir / relative_path
+# Gather list of keys and relative paths
+objects = [
+    (obj.key, Path(obj.key).relative_to(repo_root.name + "/"))  # keep detection/data/... as relative
+    for obj in bucket_obj.objects.filter(Prefix=prefix)
+    if not obj.key.endswith("/")
+]
+
+def download_with_retry(key, relative_path, max_retries=3):
+    dest_path = repo_root / relative_path
     dest_path.parent.mkdir(parents=True, exist_ok=True)
-    print(f"⬇️  Downloading {obj.key} -> {dest_path}")
-    bucket_obj.download_file(obj.key, str(dest_path))
+    for attempt in range(max_retries):
+        try:
+            bucket_obj.download_file(key, str(dest_path))
+            return True
+        except (BotoCoreError, ClientError):
+            time.sleep(2 ** attempt)
+            if attempt == max_retries - 1:
+                return key
+
+# Run downloads in parallel with retries
+failed = []
+with ThreadPoolExecutor(max_workers=8) as executor:
+    future_to_key = {
+        executor.submit(download_with_retry, key, rel_path): key
+        for key, rel_path in objects
+    }
+    for future in tqdm(as_completed(future_to_key), total=len(future_to_key), desc="⬇️  Downloading from S3"):
+        result = future.result()
+        if result is not True:
+            failed.append(result)
+
+if failed:
+    print("❌ The following files failed to download after retries:")
+    for f in failed:
+        print(f" - {f}")
+    raise RuntimeError("Download incomplete. Please retry.")
+else:
+    marker_file.write_text("Download completed.")
+    print("✅ All files downloaded successfully.")
 EOF
+
 
 # ===== Step 4: Install Python Requirements =====
 echo "📦 Installing Python packages..."
 pip install -U openmim
-mim install mmcv-full==1.7.1
+mim install mmcv-full==1.5.0
 mim install mmsegmentation==0.27.0
-pip install timm==0.6.11 mmdet==2.28.2
+pip install timm==0.6.11 mmdet==2.28.1
 pip install opencv-python termcolor yacs pyyaml scipy
 pip install 'numpy<2.0.0'
 pip install pydantic==1.10.13
