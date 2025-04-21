@@ -44,54 +44,56 @@ except s3.exceptions.ClientError as e:
         raise
 EOF
 
-# ===== Step 3: Download Dataset from S3 with retries & full path preserved =====
+# ===== Step 3: Download Dataset from S3 with retries & final path logic =====
 python3 <<EOF
 import boto3, os, time
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from tqdm import tqdm
+from urllib.parse import urlparse
 from botocore.exceptions import BotoCoreError, ClientError
 
 bucket = os.environ["S3_BUCKET"]
 prefix = os.environ["S3_PREFIX"].rstrip("/") + "/"
 repo_root = Path("$REPO_NAME")
-target_base = repo_root / "detection" / "data"
+detection_root = repo_root / "detection"
 marker_file = Path("$MARKER_FILE")
-skipped = 0
 
-target_base.mkdir(parents=True, exist_ok=True)
+# Extract last folder in prefix
+last_prefix_folder = Path(prefix.rstrip("/")).parts[-1]
+
 s3 = boto3.resource("s3")
 bucket_obj = s3.Bucket(bucket)
 
-# Collect S3 keys and compute relative local paths
+# Create key-to-local path mapping
 objects = [
-    (obj.key, Path(obj.key).relative_to(prefix))  # use S3_PREFIX for relative path
+    (
+        obj.key,
+        detection_root / last_prefix_folder / Path(obj.key).relative_to(prefix)
+    )
     for obj in bucket_obj.objects.filter(Prefix=prefix)
     if not obj.key.endswith("/")
 ]
 
-def download_with_retry(key, relative_path, max_retries=3):
-    dest_path = target_base / relative_path
-    if dest_path.exists():
-        skipped += 1
-        return True  # ✅ Skip existing file
-
-    dest_path.parent.mkdir(parents=True, exist_ok=True)
+def download_with_retry(key, local_path, max_retries=3):
+    if local_path.exists():
+        return True  # Skip if already exists
+    local_path.parent.mkdir(parents=True, exist_ok=True)
     for attempt in range(max_retries):
         try:
-            bucket_obj.download_file(key, str(dest_path))
+            bucket_obj.download_file(key, str(local_path))
             return True
         except (BotoCoreError, ClientError):
             time.sleep(2 ** attempt)
             if attempt == max_retries - 1:
-                return key  # ❌ Failed after retries
+                return key  # Return key on final failure
 
-# Run downloads in parallel with retries and skipping
+# Run downloads in parallel
 failed = []
 with ThreadPoolExecutor(max_workers=8) as executor:
     future_to_key = {
-        executor.submit(download_with_retry, key, rel_path): key
-        for key, rel_path in objects
+        executor.submit(download_with_retry, key, path): key
+        for key, path in objects
     }
     for future in tqdm(as_completed(future_to_key), total=len(future_to_key), desc="⬇️  Downloading from S3"):
         result = future.result()
@@ -104,10 +106,10 @@ if failed:
         print(f" - {f}")
     raise RuntimeError("Download incomplete. Please retry.")
 else:
-    print(skipped)
     marker_file.write_text("Download completed.")
     print("✅ All files downloaded successfully.")
 EOF
+
 
 
 
