@@ -64,7 +64,7 @@ bucket_obj = s3.Bucket(bucket)
 
 # Collect S3 keys and compute relative local paths
 objects = [
-    (obj.key, Path(obj.key).relative_to(repo_root.name + "/"))  # keep full path like detection/data/...
+    (obj.key, Path(obj.key).relative_to(prefix))  # use S3_PREFIX for relative path
     for obj in bucket_obj.objects.filter(Prefix=prefix)
     if not obj.key.endswith("/")
 ]
