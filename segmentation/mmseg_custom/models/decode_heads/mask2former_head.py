@@ -59,7 +59,7 @@ class Mask2FormerHead(BaseDecodeHead):
                  in_channels,
                  feat_channels,
                  out_channels,
-                 num_classes=80,
+                 num_classes=7,
                  num_things_classes=None,
                  num_stuff_classes=None,
                  num_queries=100,

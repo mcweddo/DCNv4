@@ -49,7 +49,7 @@ model = dict(
                 conv_out_channels=256,
                 fc_out_channels=1024,
                 roi_feat_size=7,
-                num_classes=80,
+                num_classes=7,
                 bbox_coder=dict(
                     type='DeltaXYWHBBoxCoder',
                     target_means=[0., 0., 0., 0.],
@@ -68,7 +68,7 @@ model = dict(
                 conv_out_channels=256,
                 fc_out_channels=1024,
                 roi_feat_size=7,
-                num_classes=80,
+                num_classes=7,
                 bbox_coder=dict(
                     type='DeltaXYWHBBoxCoder',
                     target_means=[0., 0., 0., 0.],
@@ -87,7 +87,7 @@ model = dict(
                 conv_out_channels=256,
                 fc_out_channels=1024,
                 roi_feat_size=7,
-                num_classes=80,
+                num_classes=7,
                 bbox_coder=dict(
                     type='DeltaXYWHBBoxCoder',
                     target_means=[0., 0., 0., 0.],
@@ -142,7 +142,7 @@ train_pipeline = [
 ]
 # we use 4 nodes to train this model, with a total batch size of 64
 data = dict(
-    samples_per_gpu=4,
+    samples_per_gpu=2,
     train=dict(pipeline=train_pipeline))
 # optimizer
 optimizer = dict(
@@ -155,7 +155,7 @@ optimizer_config = dict(grad_clip=None)
 evaluation = dict(save_best='auto')
 checkpoint_config = dict(
     interval=1,
-    max_keep_ckpts=1,
+    max_keep_ckpts=3,
     save_last=True,
 )
 resume_from = None

@@ -28,22 +28,26 @@ test_pipeline = [
             dict(type='Collect', keys=['img']),
         ])
 ]
+classes = ('2-scratch', '3-missing-piece', '1-dent', '0-crack', '4-broken-glass', '5-broken-light', '6-misplaced-part')
 data = dict(
     samples_per_gpu=2,
     workers_per_gpu=2,
     train=dict(
         type=dataset_type,
-        ann_file=data_root + 'annotations/instances_train2017.json',
-        img_prefix=data_root + 'train2017/',
+        classes=classes,
+        ann_file=data_root + 'annotations/instances_train.json',
+        img_prefix=data_root + 'images/train/',
         pipeline=train_pipeline),
     val=dict(
         type=dataset_type,
-        ann_file=data_root + 'annotations/instances_val2017.json',
-        img_prefix=data_root + 'val2017/',
+        classes=classes,
+        ann_file=data_root + 'annotations/instances_valid.json',
+        img_prefix=data_root + 'images/valid/',
         pipeline=test_pipeline),
     test=dict(
         type=dataset_type,
-        ann_file=data_root + 'annotations/instances_val2017.json',
-        img_prefix=data_root + 'val2017/',
+        classes=classes,
+        ann_file=data_root + 'annotations/instances_test.json',
+        img_prefix=data_root + 'images/test/',
         pipeline=test_pipeline))
 evaluation = dict(metric=['bbox', 'segm'], classwise=True)
