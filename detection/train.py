@@ -4,7 +4,7 @@
 # Licensed under The MIT License [see LICENSE for details]
 # --------------------------------------------------------
 
-
+import sys
 import argparse
 import copy
 import os
@@ -94,7 +94,8 @@ def parse_args():
     parser.add_argument('--auto-scale-lr',
                         action='store_true',
                         help='enable automatically scaling LR.')
-    args = parser.parse_args()
+    args, rest = parser.parse_known_args()
+    sys.argv = [sys.argv[0]] + rest
     if 'LOCAL_RANK' not in os.environ:
         os.environ['LOCAL_RANK'] = str(args.local_rank)
 
