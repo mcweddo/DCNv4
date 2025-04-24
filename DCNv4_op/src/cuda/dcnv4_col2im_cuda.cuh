@@ -381,6 +381,13 @@ void _dcnv4_col2im_cuda(
 
   constexpr int L = 1;
 
+  inline void choose_block_dims(int threads_x, int groups_g,
+                              int &threads_y, int &block_mult) {
+    const int max_y = 1024 / threads_x;               // hardest limit
+    threads_y   = std::min(groups_g, max_y);          // keep inside limit
+    block_mult  = (groups_g + threads_y - 1) / threads_y; // ceil_div
+  }
+
   // --- FIX: make sure we never exceed 1024 threads per block ---------------
 auto split_threads = [](int threads_x, int groups_g, int &threads_y,
                         int &block_mult) {
@@ -451,9 +458,10 @@ auto split_threads = [](int threads_x, int groups_g, int &threads_y,
   }
 
   int threads_y, block_multiplier;
-  split_threads(D / d_stride, G, threads_y, block_multiplier);
+  choose_block_dims(D / d_stride, G, threads_y, block_multiplier);
 
-  dim3 num_threads(D / d_stride, threads_y, block_multiplier);
+  // one block now covers `threads_y` groups; Z-dim always 1
+  dim3 num_threads(D / d_stride, threads_y, 1);
   assert((B * Q) % block_multiplier == 0);
   dim3 num_blocks(B * Q / block_multiplier);
 
