@@ -45,73 +45,77 @@ except s3.exceptions.ClientError as e:
         raise
 EOF
 
-# ===== Step 3: Download Dataset from S3 with retries & final path logic =====
-python3 <<EOF
-import boto3, os, time
+# ===== Step 3: download with per-file speed bars  ==========================
+python3 <<'PY'
+import boto3, os, time, threading
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from tqdm import tqdm
-from urllib.parse import urlparse
 from botocore.exceptions import BotoCoreError, ClientError
 
-bucket = os.environ["S3_BUCKET"]
-prefix = os.environ["S3_PREFIX"].rstrip("/") + "/"
-repo_root = Path("$REPO_NAME")
-detection_root = repo_root / "detection"
+bucket      = os.environ["S3_BUCKET"]
+prefix      = os.environ["S3_PREFIX"].rstrip("/") + "/"
+repo_root   = Path("$REPO_NAME")
+det_root    = repo_root / "detection"
 marker_file = Path("$MARKER_FILE")
 
-# Extract last folder in prefix
 last_prefix_folder = Path(prefix.rstrip("/")).parts[-1]
 
-s3 = boto3.resource("s3")
-bucket_obj = s3.Bucket(bucket)
+s3    = boto3.resource("s3")
+s3c   = boto3.client("s3")
+bkt   = s3.Bucket(bucket)
 
-# Create key-to-local path mapping
 objects = [
-    (
-        obj.key,
-        detection_root / last_prefix_folder / Path(obj.key).relative_to(prefix)
-    )
-    for obj in bucket_obj.objects.filter(Prefix=prefix)
+    (obj.key, det_root / last_prefix_folder / Path(obj.key).relative_to(prefix))
+    for obj in bkt.objects.filter(Prefix=prefix)
     if not obj.key.endswith("/")
 ]
 
 def download_with_retry(key, local_path, max_retries=3):
     if local_path.exists():
-        return True  # Skip if already exists
-    local_path.parent.mkdir(parents=True, exist_ok=True)
+        return True
+
+    size = s3c.head_object(Bucket=bucket, Key=key)["ContentLength"]
+    bar  = tqdm(
+        total=size, unit="B", unit_scale=True, unit_divisor=1024,
+        desc=str(local_path.relative_to(det_root)), leave=False,
+        position=threading.get_ident() % 64   # keep bars separate
+    )
+
+    def cb(bytes_amount):                 # tqdm callback
+        bar.update(bytes_amount)
+
     for attempt in range(max_retries):
         try:
-#            print("ima")
-            bucket_obj.download_file(key, str(local_path))
+            local_path.parent.mkdir(parents=True, exist_ok=True)
+            with open(local_path, "wb") as f:
+                bkt.download_fileobj(key, f, Callback=cb)
+            bar.close()
             return True
         except (BotoCoreError, ClientError):
+            bar.close()
             time.sleep(2 ** attempt)
             if attempt == max_retries - 1:
-                return key  # Return key on final failure
+                return key
 
-# Run downloads in parallel
 failed = []
-with ThreadPoolExecutor(max_workers=8) as executor:
-    future_to_key = {
-        executor.submit(download_with_retry, key, path): key
-        for key, path in objects
-    }
-    for future in tqdm(as_completed(future_to_key), total=len(future_to_key), desc="⬇️  Downloading from S3"):
-        result = future.result()
-        if result is not True:
-            failed.append(result)
+with ThreadPoolExecutor(max_workers=8) as ex:
+    futs = {ex.submit(download_with_retry, k, p): k for k, p in objects}
+    for _ in tqdm(as_completed(futs), total=len(futs),
+                  desc="⬇️  files done", unit="file"):
+        res = _.result()
+        if res is not True:
+            failed.append(res)
 
 if failed:
-    print("❌ The following files failed to download after retries:")
-    for f in failed:
-        print(f" - {f}")
-    raise RuntimeError("Download incomplete. Please retry.")
+    print("❌ failed files:", *failed, sep="\n  - ")
+    raise RuntimeError("Download incomplete.")
 else:
-    marker_file.parent.mkdir(parents=True, exist_ok=True)  # ensure dir exists
+    marker_file.parent.mkdir(parents=True, exist_ok=True)
     marker_file.write_text("Download completed.")
-    print("✅ All files downloaded successfully.")
-EOF
+    print("✅ all files downloaded")
+PY
+# ========================================================================
 
 COCO_ZIP_DIR="$REPO_NAME/detection/data/coco"
 
