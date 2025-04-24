@@ -113,8 +113,18 @@ else:
     print("✅ All files downloaded successfully.")
 EOF
 
+COCO_ZIP_DIR="$REPO_NAME/detection/data/coco"
 
-
+if [[ -d "$COCO_ZIP_DIR" ]]; then
+  echo "📦 Scanning $COCO_ZIP_DIR for zip archives…"
+  find "$COCO_ZIP_DIR" -maxdepth 1 -type f -name '*.zip' | while read -r zipfile; do
+      echo "🗜️  Unzipping $(basename "$zipfile")"
+      unzip -q -o "$zipfile" -d "$COCO_ZIP_DIR" && rm -f "$zipfile"
+      #                                  └──────── remove zip only if unzip succeeded
+  done
+else
+  echo "⚠️  Folder $COCO_ZIP_DIR not found – skipping unzip step."
+fi
 
 # ===== Step 4: Install Python Requirements =====
 echo "📦 Installing Python packages..."
