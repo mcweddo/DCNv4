@@ -17,6 +17,17 @@
 #include <cuda_runtime.h>
 #include "common.h"
 
+// ----------------------------------------------------------------------------
+// Helper: choose thread layout so X*Y  ≤ 1024, Z = 1, spill into grid blocks
+// ----------------------------------------------------------------------------
+static inline void choose_block_dims(int threads_x, int groups_g,
+                                     int &threads_y, int &block_mult) {
+    const int max_y = 1024 / threads_x;          // hardware limit
+    threads_y  = std::min(groups_g, max_y);
+    block_mult = (groups_g + threads_y - 1) / threads_y; // ceil_div
+}
+
+
 template <typename scalar_t, int d_stride, typename transfer_t, int L, int K,
           bool softmax>
 __global__ void backward_kernel_dcn(
@@ -381,25 +392,6 @@ void _dcnv4_col2im_cuda(
 
   constexpr int L = 1;
 
-  inline void choose_block_dims(int threads_x, int groups_g,
-                              int &threads_y, int &block_mult) {
-    const int max_y = 1024 / threads_x;               // hardest limit
-    threads_y   = std::min(groups_g, max_y);          // keep inside limit
-    block_mult  = (groups_g + threads_y - 1) / threads_y; // ceil_div
-  }
-
-  // --- FIX: make sure we never exceed 1024 threads per block ---------------
-auto split_threads = [](int threads_x, int groups_g, int &threads_y,
-                        int &block_mult) {
-  threads_y  = groups_g;
-  block_mult = 1;
-  // Cap Y so that X*Y <= 1024; spill the rest into block_mult (Z-dim).
-  while (threads_x * threads_y > 1024) {
-    threads_y  = (threads_y + 1) >> 1;   // halve, round-up
-    block_mult <<= 1;                    // double z dimension
-  }
-};
-
   auto kernel =
       backward_kernel_dcn_warp_primitive<scalar_t, d_stride, stride_type, 1, 9, false>;
 
@@ -460,8 +452,7 @@ auto split_threads = [](int threads_x, int groups_g, int &threads_y,
   int threads_y, block_multiplier;
   choose_block_dims(D / d_stride, G, threads_y, block_multiplier);
 
-  // one block now covers `threads_y` groups; Z-dim always 1
-  dim3 num_threads(D / d_stride, threads_y, 1);
+  dim3 num_threads(D / d_stride, threads_y, 1);          // z = 1 (always)
   assert((B * Q) % block_multiplier == 0);
   dim3 num_blocks(B * Q / block_multiplier);
 
