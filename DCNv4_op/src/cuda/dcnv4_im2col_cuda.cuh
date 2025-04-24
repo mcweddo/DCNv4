@@ -17,12 +17,20 @@
 #include <cuda_runtime.h>
 #include "common.h"
 
-static inline void choose_block_dims(int threads_x, int groups_g,
-                                     int &threads_y, int &block_mult) {
-    const int max_y = 1024 / threads_x;          // hardware limit
-    threads_y  = std::min(groups_g, max_y);
-    block_mult = (groups_g + threads_y - 1) / threads_y; // ceil_div
+#ifndef DCNV4_CHOOSE_BLOCK_DIMS_H_
+#define DCNV4_CHOOSE_BLOCK_DIMS_H_
+
+// choose_block_dims: keep X*Y <= 1024, Z = 1, spill extra groups into grid
+static inline __host__ __device__
+void choose_block_dims(int threads_x, int groups_g,
+                       int &threads_y, int &block_mult) {
+    const int max_y  = 1024 / threads_x;              // HW limit per block
+    threads_y  = (groups_g < max_y) ? groups_g : max_y;
+    block_mult = (groups_g + threads_y - 1) / threads_y; // ceil-div
 }
+
+#endif  // DCNV4_CHOOSE_BLOCK_DIMS_H_
+
 
 template <typename scalar_t, int d_stride, typename transfer_t, int L, int K,
           bool softmax>
