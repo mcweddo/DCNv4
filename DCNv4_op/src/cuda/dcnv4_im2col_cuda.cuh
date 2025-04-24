@@ -262,6 +262,18 @@ void _dcnv4_im2col_cuda(cudaStream_t stream,
 
   constexpr int L = 1;
 
+  // --- FIX: make sure we never exceed 1024 threads per block ---------------
+auto split_threads = [](int threads_x, int groups_g, int &threads_y,
+                        int &block_mult) {
+  threads_y  = groups_g;
+  block_mult = 1;
+  // Cap Y so that X*Y <= 1024; spill the rest into block_mult (Z-dim).
+  while (threads_x * threads_y > 1024) {
+    threads_y  = (threads_y + 1) >> 1;   // halve, round-up
+    block_mult <<= 1;                    // double z dimension
+  }
+};
+
   auto kernel = forward_kernel_dcn_reg<scalar_t, d_stride, stride_type, 1, 9, true>;
 
   int N = height_in * width_in;
@@ -297,11 +309,16 @@ void _dcnv4_im2col_cuda(cudaStream_t stream,
     }
   }
 
-  const int block_multiplier = block_thread / (D / d_stride) / G;
-  assert((B*Q) % block_multiplier == 0);
-
-  dim3 num_blocks(B*Q / block_multiplier);
-  dim3 num_threads(D / d_stride, G, block_multiplier);
+//   const int block_multiplier = block_thread / (D / d_stride) / G;
+//   assert((B*Q) % block_multiplier == 0);
+//
+//   dim3 num_blocks(B*Q / block_multiplier);
+//   dim3 num_threads(D / d_stride, G, block_multiplier);
+  int threads_y, block_multiplier;
+  split_threads(D / d_stride, G, threads_y, block_multiplier);
+  dim3 num_threads(D / d_stride, threads_y, block_multiplier);
+  assert((B * Q) % block_multiplier == 0);
+  dim3 num_blocks(B * Q / block_multiplier);
 
   int shm_size = 0;
 
