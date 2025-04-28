@@ -20,7 +20,7 @@
 #ifndef DCNV4_CHOOSE_BLOCK_DIMS_H_
 #define DCNV4_CHOOSE_BLOCK_DIMS_H_
 
-// choose_block_dims: keep X*Y <= 1024, Z = 1, spill extra groups into grid
+
 static inline __host__ __device__
 void choose_block_dims(int threads_x, int groups_g,
                        int &threads_y, int &block_mult) {

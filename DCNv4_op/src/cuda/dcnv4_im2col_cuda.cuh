@@ -312,15 +312,10 @@ void _dcnv4_im2col_cuda(cudaStream_t stream,
     }
   }
 
-//   const int block_multiplier = block_thread / (D / d_stride) / G;
-//   assert((B*Q) % block_multiplier == 0);
-//
-//   dim3 num_blocks(B*Q / block_multiplier);
-//   dim3 num_threads(D / d_stride, G, block_multiplier);
   int threads_y, block_multiplier;
   choose_block_dims(D / d_stride, G, threads_y, block_multiplier);
 
-  dim3 num_threads(D / d_stride, threads_y, 1);          // z = 1 (always)
+  dim3 num_threads(D / d_stride, threads_y, 1);
   assert((B * Q) % block_multiplier == 0);
   dim3 num_blocks(B * Q / block_multiplier);
 
