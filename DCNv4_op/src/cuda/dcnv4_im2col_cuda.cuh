@@ -17,6 +17,21 @@
 #include <cuda_runtime.h>
 #include "common.h"
 
+#ifndef DCNV4_CHOOSE_BLOCK_DIMS_H_
+#define DCNV4_CHOOSE_BLOCK_DIMS_H_
+
+// choose_block_dims: keep X*Y <= 1024, Z = 1, spill extra groups into grid
+static inline __host__ __device__
+void choose_block_dims(int threads_x, int groups_g,
+                       int &threads_y, int &block_mult) {
+    const int max_y  = 1024 / threads_x;              // HW limit per block
+    threads_y  = (groups_g < max_y) ? groups_g : max_y;
+    block_mult = (groups_g + threads_y - 1) / threads_y; // ceil-div
+}
+
+#endif  // DCNV4_CHOOSE_BLOCK_DIMS_H_
+
+
 template <typename scalar_t, int d_stride, typename transfer_t, int L, int K,
           bool softmax>
 __global__ void forward_kernel_dcn(
@@ -297,11 +312,17 @@ void _dcnv4_im2col_cuda(cudaStream_t stream,
     }
   }
 
-  const int block_multiplier = block_thread / (D / d_stride) / G;
-  assert((B*Q) % block_multiplier == 0);
+//   const int block_multiplier = block_thread / (D / d_stride) / G;
+//   assert((B*Q) % block_multiplier == 0);
+//
+//   dim3 num_blocks(B*Q / block_multiplier);
+//   dim3 num_threads(D / d_stride, G, block_multiplier);
+  int threads_y, block_multiplier;
+  choose_block_dims(D / d_stride, G, threads_y, block_multiplier);
 
-  dim3 num_blocks(B*Q / block_multiplier);
-  dim3 num_threads(D / d_stride, G, block_multiplier);
+  dim3 num_threads(D / d_stride, threads_y, 1);          // z = 1 (always)
+  assert((B * Q) % block_multiplier == 0);
+  dim3 num_blocks(B * Q / block_multiplier);
 
   int shm_size = 0;
 
