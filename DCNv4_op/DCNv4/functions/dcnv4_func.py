@@ -18,6 +18,36 @@ from .table import TABLE, BWDTABLE
 
 from DCNv4 import ext
 
+import torch
+from torch.onnx import register_custom_op_symbolic
+
+def dcnv4_symbolic(g, input, p_offset,
+                   kernel_h, kernel_w,
+                   stride_h, stride_w,
+                   pad_h, pad_w,
+                   dilation_h, dilation_w,
+                   group, group_channels,
+                   offset_scale, im2col_step,
+                   remove_center, d_stride,
+                   block_thread, softmax):
+    return g.op("custom_ops::DCNv4",
+                input, p_offset,
+                kernel_h_i=kernel_h, kernel_w_i=kernel_w,
+                stride_h_i=stride_h, stride_w_i=stride_w,
+                pad_h_i=pad_h, pad_w_i=pad_w,
+                dilation_h_i=dilation_h, dilation_w_i=dilation_w,
+                group_i=group, group_channels_i=group_channels,
+                offset_scale_f=offset_scale,
+                im2col_step_i=im2col_step,
+                remove_center_i=remove_center,
+                d_stride_i=d_stride,
+                block_thread_i=block_thread,
+                softmax_i=softmax)
+
+# The qualified name must match the Python op: "DCNv4.ext::dcnv4_cuda_forward"
+register_custom_op_symbolic("DCNv4.ext::dcnv4_cuda_forward", dcnv4_symbolic, 16)
+
+
 def factors(N):
     res = []
     for i in range(1, N+1):
